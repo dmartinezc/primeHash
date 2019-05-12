@@ -1,3 +1,19 @@
+ // primeHash: a hash function rotating by prime numbers.
+// Copyright (C) 2019  Diego Martinez
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 #include "stdio.h"
 
 #include <cstddef> // for size_t
@@ -13,23 +29,19 @@ namespace {
 
 constexpr std::size_t N_CHARS = sizeof(std::size_t);
 
-struct Combine;
-
 struct Hash {
-     Hash() : h() { }
+     Hash() : h(0) { }
      explicit Hash(const std::size_t val) : h(val) { }
 
      explicit Hash(const std::size_t w, const unsigned bytes) :
 	  h(w &
 	    ~(((std::size_t)(-1)) << (bytes * CHAR_BIT)))
-	  {
-	       assert(bytes <= N_CHARS &&
-		      "packing too many bits");
-	       assert(bytes >= 1 &&
-		      "redundant, should be calling the other ctor");
-	       assert(!str[bytes] &&
-		      "not null terminated");
-	  }
+     {
+	  assert(bytes <= N_CHARS &&
+		 "packing too many bits");
+	  assert(bytes >= 1 &&
+		 "redundant, should be calling the other ctor");
+     }
      explicit Hash(const char* str) :
 	  h(*reinterpret_cast<const std::size_t*>(str))
      {
@@ -47,10 +59,11 @@ struct Hash {
 		 "packing too many bits");
 	  assert(bytes >= 1 &&
 		 "redundant, should be calling the other ctor");
-	  assert(!str[bytes] &&
-		 "not null terminated");
      }
-     
+     void operator=(std::size_t val) {
+	  h = val;
+     }
+
      std::size_t h;
 }; // struct Hash
 
@@ -66,7 +79,7 @@ template<> struct D<8> { typedef unsigned __int128 D_t; };
 
 struct Double {
      using D_t =  D<N_CHARS>::D_t;
-	  
+
      explicit Double(const Hash val, const std::size_t magic) :
 	  u(((D_t)val.h) * ((D_t)magic))
 	  { }
@@ -85,7 +98,7 @@ struct Double {
 
 /// Prime numbers
 struct P {
-     // 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 
+     // 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61
      static constexpr std::size_t p3 = 1u << 3;
      static constexpr std::size_t p5 = 1u << 5;
      static constexpr std::size_t p7 = 1u << 7;
@@ -106,7 +119,7 @@ template<> struct M<4> : P {
 
      static constexpr std::size_t Magic1 =
 	  p3 | p5 | p7 | p11 | p13 | p17 | p19 | p23| p29 | p31;
-     
+
      static constexpr std::size_t Magic2a = p3 | p7 | p13 | p19 | p29;
      static constexpr std::size_t Magic2b = p5 | p11 | p17 | p23 | p31;
 
@@ -118,6 +131,12 @@ template<> struct M<4> : P {
      static constexpr std::size_t Magic4b = p5 | p17; // | p31 ?
      static constexpr std::size_t Magic4c = p7 | p19;
      static constexpr std::size_t Magic4d = p11 | p23;
+
+     static constexpr std::size_t Magic5a = p3 | p17;
+     static constexpr std::size_t Magic5b = p5 | p19;
+     static constexpr std::size_t Magic5c = p7 | p23;
+     static constexpr std::size_t Magic5d = p11 | p29;
+     static constexpr std::size_t Magic5e = p13 | p31;
 };
 template<> struct M<8> : P {
      static constexpr std::size_t hi = 0x8080808080808080;
@@ -149,30 +168,44 @@ template<> struct M<8> : P {
      static constexpr S<8>::S_t Magic4b = p5 | p17 | p31 | p47;
      static constexpr S<8>::S_t Magic4c = p7 | p19 | p37 | p53;
      static constexpr S<8>::S_t Magic4d = p11 | p23 | p41 | p59;
+
+     static constexpr std::size_t Magic5a = p3 | p17 | p37; // | p59 ?
+     static constexpr std::size_t Magic5b = p5 | p19 | p41; // | p61 ?
+     static constexpr std::size_t Magic5c = p7 | p23 | p43;
+     static constexpr std::size_t Magic5d = p11 | p29 | p47;
+     static constexpr std::size_t Magic5e = p13 | p31 | p53;
 };
 
-struct Combine {
+std::size_t
+combine(Hash a, Hash b)
+{
      using Mn = M<N_CHARS>;
-     Combine(Hash a, Hash b) :
-	  result(Double{a, Mn::Magic2a}.reduce() ^
-		 Double{b, Mn::Magic2b}.reduce()) { }
+     return (Double{a, Mn::Magic2a}.reduce() ^
+	     Double{b, Mn::Magic2b}.reduce());
+}
 
-     Combine(Hash a, Hash b, Hash c) :
-	  result(Double{a, Mn::Magic3a}.reduce() ^
-		 Double{b, Mn::Magic3b}.reduce() ^
-		 Double{c, Mn::Magic3c}.reduce()) { }
+std::size_t
+combine(Hash a, Hash b, Hash c)
+{
+     using Mn = M<N_CHARS>;
+     return (Double{a, Mn::Magic3a}.reduce() ^
+	     Double{b, Mn::Magic3b}.reduce() ^
+	     Double{c, Mn::Magic3c}.reduce());
+}
 
-     Combine(Hash a, Hash b, Hash c, Hash d) :
-	  result(Double{a, Mn::Magic4a}.reduce() ^
-		 Double{b, Mn::Magic4b}.reduce() ^
-		 Double{c, Mn::Magic4c}.reduce() ^
-		 Double{d, Mn::Magic4d}.reduce()) { }
-
-     Hash result;
-}; // struct Combine
+std::size_t
+combine(Hash a, Hash b, Hash c, Hash d)
+{
+     using Mn = M<N_CHARS>;
+     return (Double{a, Mn::Magic4a}.reduce() ^
+	     Double{b, Mn::Magic4b}.reduce() ^
+	     Double{c, Mn::Magic4c}.reduce() ^
+	     Double{d, Mn::Magic4d}.reduce());
+}
 
 } // anonymous namespace
 
+/* WIP
 std::size_t
 primeHash(const void* ptr, const std::size_t size) {
 
@@ -181,7 +214,7 @@ primeHash(const void* ptr, const std::size_t size) {
 	  ((std::size_t)(str + i)) & (N_CHARS - 1); // size_t alignment
 	  i++) {
 	  if (!str[i]) {
-	       ///@note scramble the bits anyway 
+	       ///@note scramble the bits anyway
 	       return Double{Hash{str, i},
 			     M<N_CHARS>::Magic1
 			     }.reduce();
@@ -196,13 +229,13 @@ primeHash(const void* ptr, const std::size_t size) {
      Hash u = (i == 0 ? Hash{*wordPtr++} : Hash{str, i});
 
 
-     
+
      while (true) {
 	  std::size_t curr = *wordPtr++;
 	  if ((curr - M<N_CHARS>::lo) & ~curr & M<N_CHARS>::hi) {
 	       // current word might have a zero byte
 	       str = (const char*)(wordPtr - 1);
-	  
+
 	       for (i = 0; i < N_CHARS; i++) {
 		    if (!str[i]) {
 			 // found the last '\0'
@@ -210,38 +243,44 @@ primeHash(const void* ptr, const std::size_t size) {
 		    }
 	       }
 	       if (!str[i]) {
-		    return Combine(u, Hash{curr, i}).result.h;
+		    return combine(u, Hash{curr, i});
 	       }
 	       // else false positive...
 	  }
 	  // ...continue with the next word
-	  u = Combine(u, Hash{curr}).result;
+	  u = combine(u, Hash{curr});
      }
 }
+*/
 
 
 std::size_t
 primeHash(const char* str) {
 
+     Hash u{};
      // Handle the first bytes until str is aligned with a full word
      // size_t pointer
      unsigned i;
-     for (i = 0;
-	  ((std::size_t)(str + i)) & (N_CHARS - 1); // size_t alignment
-	  i++) {
+     for (i = 0; ;i++) {
+	  if (!(((std::size_t)(str + i)) & (N_CHARS - 1))) {
+	       // size_t alignment
+	       if (i > 0) {
+		    // Start the initial seed with the first bytes
+		    u = Hash{str, i};
+	       }
+	       break;
+	  }
 	  if (!str[i]) {
-	       ///@note scramble the bits anyway 
+	       ///@note all the data fits in size_t
+	       /// scramble the bits anyway
 	       return Double{Hash{str, i},
 			     M<N_CHARS>::Magic1}.reduce();
 	  }
      }
 
      // Now 'wordPtr' points to a size_t aligned word.
+     // consume N_CHARS at a time while doing the combine.
      std::size_t* wordPtr = (std::size_t*)(str + i);
-
-     // Start the initial seed with the first bytes and consume
-     // N_CHARS at a time while doing the combine..
-     Hash u = (i == 0 ? Hash{*wordPtr++} : Hash{str, i});
 
      while (true) {
 	  std::size_t curr = *wordPtr++;
@@ -251,13 +290,13 @@ primeHash(const char* str) {
 	       for (i = 0; i < N_CHARS; i++) {
 		    if (!str[i]) {
 			 // found the last '\0'
-			 return Combine(u, Hash{curr, i}).result.h;
+			 return combine(u, Hash{curr, i});
 		    }
 	       }
 	       // else false positive...
 	  }
 	  // ...continue with the next word
-	  u = Combine(u, Hash{curr}).result;
+	  u = combine(u, Hash{curr});
      }
 }
 
