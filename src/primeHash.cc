@@ -79,13 +79,31 @@ template<> struct D<8> { typedef unsigned __int128 D_t; };
 struct Double {
      using D_t =  D<N_CHARS>::D_t;
 
+     explicit Double(const std::size_t val, const std::size_t magic) :
+	  u(((D_t)val) * ((D_t)magic))
+	  { }
      explicit Double(const Hash val, const std::size_t magic) :
-	  u(((D_t)val.h) * ((D_t)magic))
+	  Double(val.h, magic)
+	  { }
+     explicit Double(const Double&& a) :
+	  u(a.u.h)
+	  { }
+     explicit Double(const Double&& a, const Double&& b) :
+	  u(a.u.h ^ b.u.h)
+	  { }
+     explicit Double(const Double&& a, const Double&& b,
+		     const Double&& c) :
+	  u(a.u.h ^ b.u.h ^ c.u.h)
+	  { }
+     explicit Double(const Double&& a, const Double&& b,
+		     const Double&& c, const Double&& d) :
+	  u(a.u.h ^ b.u.h ^ c.u.h ^ d.u.h)
 	  { }
 
      std::size_t reduce() const {
 	  return u.ab[0] ^ u.ab[1];
      }
+    
      union U {
 	  U(D_t val) : h(val) { }
 	  D_t h;
@@ -176,36 +194,33 @@ template<> struct M<8> : P {
 };
 
 std::size_t
-scramble(Hash h)
+scramble(const Hash h)
 {
      return Double{h, M<N_CHARS>::Magic1}.reduce();
 }
 
 std::size_t
-combine(Hash a, Hash b)
+combine(const Hash a, const Hash b)
 {
-     using Mn = M<N_CHARS>;
-     return (Double{a, Mn::Magic2a}.reduce() ^
-	     Double{b, Mn::Magic2b}.reduce());
+     return Double{Double{a, M<N_CHARS>::Magic2a},
+		   Double{b, M<N_CHARS>::Magic2b}}.reduce();
 }
 
 std::size_t
-combine(Hash a, Hash b, Hash c)
+combine(const Hash a, const Hash b, const Hash c)
 {
-     using Mn = M<N_CHARS>;
-     return (Double{a, Mn::Magic3a}.reduce() ^
-	     Double{b, Mn::Magic3b}.reduce() ^
-	     Double{c, Mn::Magic3c}.reduce());
+     return Double{Double{a, M<N_CHARS>::Magic3a},
+		   Double{b, M<N_CHARS>::Magic3b},
+		   Double{c, M<N_CHARS>::Magic3c}}.reduce();
 }
 
 std::size_t
-combine(Hash a, Hash b, Hash c, Hash d)
+combine(const Hash a, const Hash b, const Hash c, const Hash d)
 {
-     using Mn = M<N_CHARS>;
-     return (Double{a, Mn::Magic4a}.reduce() ^
-	     Double{b, Mn::Magic4b}.reduce() ^
-	     Double{c, Mn::Magic4c}.reduce() ^
-	     Double{d, Mn::Magic4d}.reduce());
+     return Double{Double{a, M<N_CHARS>::Magic4a},
+		   Double{b, M<N_CHARS>::Magic4b},
+		   Double{c, M<N_CHARS>::Magic4c},
+		   Double{d, M<N_CHARS>::Magic4d}}.reduce();
 }
 
 } // anonymous namespace
@@ -323,9 +338,11 @@ main(int argc, char *argv[])
 	  std::size_t h2 = primeHash(argv[1]);
 	  high_resolution_clock::time_point t3 = high_resolution_clock::now();
 
-	  printf("stdhash (%d): %zd %zx %zo, myHash (%d): %zd %zx %zo\n",
-		 t2 - t1, h1, h1, h1,
-		 t3 - t2, h2, h2, h2);
+	  auto stdTime = duration_cast<std::chrono::nanoseconds>(t2 -t1);
+	  auto primeTime = duration_cast<std::chrono::nanoseconds>(t3 -t2);
+	  printf("stdhash (%ld ns): %zd %zx %zo, myHash (%ld ns): %zd %zx %zo\n",
+		 stdTime.count(), h1, h1, h1,
+		 primeTime.count(), h2, h2, h2);
      }
      return 0;
 }
