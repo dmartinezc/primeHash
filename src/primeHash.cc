@@ -1,4 +1,4 @@
- // primeHash: a hash function rotating by prime numbers.
+// primeHash: a hash function rotating by prime numbers.
 // Copyright (C) 2019  Diego Martinez
 //
 // This program is free software: you can redistribute it and/or modify
@@ -52,8 +52,7 @@ struct Hash {
 #endif
      }
      explicit Hash(const char* str, const unsigned bytes) :
-	  h((*reinterpret_cast<const std::size_t*>(str)) &
-	    ~(((std::size_t)(-1)) << (bytes * CHAR_BIT)))
+	  Hash(*reinterpret_cast<const std::size_t*>(str), bytes)
      {
 	  assert(bytes <= N_CHARS &&
 		 "packing too many bits");
@@ -67,12 +66,12 @@ struct Hash {
      std::size_t h;
 }; // struct Hash
 
-/// single pressition data type
+/// single precision data type
 template <std::size_t bytes> struct S;
 template<> struct S<4> { typedef std::uint32_t S_t; };
 template<> struct S<8> { typedef std::uint64_t S_t; };
 
-/// double pressition data type
+/// double precision data type
 template <std::size_t bytes> struct D;
 template<> struct D<4> { typedef std::uint64_t D_t; };
 template<> struct D<8> { typedef unsigned __int128 D_t; };
@@ -177,6 +176,12 @@ template<> struct M<8> : P {
 };
 
 std::size_t
+scramble(Hash h)
+{
+     return Double{h, M<N_CHARS>::Magic1}.reduce();
+}
+
+std::size_t
 combine(Hash a, Hash b)
 {
      using Mn = M<N_CHARS>;
@@ -258,23 +263,23 @@ std::size_t
 primeHash(const char* str) {
 
      Hash u{};
-     // Handle the first bytes until str is aligned with a full word
-     // size_t pointer
+     // Handle the first bytes until str is aligned with a size_t word
      unsigned i;
      for (i = 0; ;i++) {
 	  if (!(((std::size_t)(str + i)) & (N_CHARS - 1))) {
 	       // size_t alignment
 	       if (i > 0) {
 		    // Start the initial seed with the first bytes
-		    u = Hash{str, i};
+		    // scattered in the full word
+		    u = scramble(Hash{str, i});
 	       }
 	       break;
 	  }
 	  if (!str[i]) {
 	       ///@note all the data fits in size_t
-	       /// scramble the bits anyway
-	       return Double{Hash{str, i},
-			     M<N_CHARS>::Magic1}.reduce();
+	       // Scramble the bits anyway to acomodate for hash
+	       // tables growing by powers of 2
+	       return scramble(Hash{str, i});
 	  }
      }
 
@@ -290,7 +295,7 @@ primeHash(const char* str) {
 	       for (i = 0; i < N_CHARS; i++) {
 		    if (!str[i]) {
 			 // found the last '\0'
-			 return combine(u, Hash{curr, i});
+			 return combine(u, Hash{scramble(Hash{curr, i})});
 		    }
 	       }
 	       // else false positive...
@@ -300,12 +305,15 @@ primeHash(const char* str) {
      }
 }
 
-std::size_t stdHash(const char* str) {
-
+std::size_t
+stdHash(const char* str)
+{
      return std::hash<std::string_view>{}(str);
 }
 
-int main(int argc, char *argv[]) {
+int
+main(int argc, char *argv[])
+{
      if (argv[1]) {
 	  using namespace std::chrono;
 
