@@ -30,7 +30,7 @@ namespace {
 constexpr std::size_t N_CHARS = sizeof(std::size_t);
 
 struct Hash {
-     Hash() : h(0) { }
+     Hash() : h() { }
      explicit Hash(const std::size_t val) : h(val) { }
 
      explicit Hash(const std::size_t w, const unsigned bytes) :
@@ -39,8 +39,6 @@ struct Hash {
      {
 	  assert(bytes <= N_CHARS &&
 		 "packing too many bits");
-	  assert(bytes >= 1 &&
-		 "redundant, should be calling the other ctor");
      }
      explicit Hash(const char* str) :
 	  h(*reinterpret_cast<const std::size_t*>(str))
@@ -56,8 +54,6 @@ struct Hash {
      {
 	  assert(bytes <= N_CHARS &&
 		 "packing too many bits");
-	  assert(bytes >= 1 &&
-		 "redundant, should be calling the other ctor");
      }
      void operator=(std::size_t val) {
 	  h = val;
@@ -116,16 +112,16 @@ struct Double {
 /// Prime numbers
 struct P {
      // 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61
-     static constexpr std::size_t p3 = 1u << 3;
-     static constexpr std::size_t p5 = 1u << 5;
-     static constexpr std::size_t p7 = 1u << 7;
-     static constexpr std::size_t p11 = 1u << 11;
-     static constexpr std::size_t p13 = 1u << 13;
-     static constexpr std::size_t p17 = 1u << 17;
-     static constexpr std::size_t p19 = 1u << 19;
-     static constexpr std::size_t p23 = 1u << 23;
-     static constexpr std::size_t p29 = 1u << 29;
-     static constexpr std::size_t p31 = 1u << 31;
+     static constexpr std::size_t p3 = 1u << (3 - 1);
+     static constexpr std::size_t p5 = 1u << (5 - 1);
+     static constexpr std::size_t p7 = 1u << (7 - 1);
+     static constexpr std::size_t p11 = 1u << (11 - 1);
+     static constexpr std::size_t p13 = 1u << (13 - 1);
+     static constexpr std::size_t p17 = 1u << (17 - 1);
+     static constexpr std::size_t p19 = 1u << (19 - 1);
+     static constexpr std::size_t p23 = 1u << (23 - 1);
+     static constexpr std::size_t p29 = 1u << (29 - 1);
+     static constexpr std::size_t p31 = 1u << (31 - 1);
 };
 
 /// magic numbers
@@ -159,13 +155,13 @@ template<> struct M<8> : P {
      static constexpr std::size_t hi = 0x8080808080808080;
      static constexpr std::size_t lo = 0x0101010101010101;
 
-     static constexpr S<8>::S_t p37 = ((S<8>::S_t)1) << 37;
-     static constexpr S<8>::S_t p41 = ((S<8>::S_t)1) << 41;
-     static constexpr S<8>::S_t p43 = ((S<8>::S_t)1) << 43;
-     static constexpr S<8>::S_t p47 = ((S<8>::S_t)1) << 47;
-     static constexpr S<8>::S_t p53 = ((S<8>::S_t)1) << 53;
-     static constexpr S<8>::S_t p59 = ((S<8>::S_t)1) << 59;
-     static constexpr S<8>::S_t p61 = ((S<8>::S_t)1) << 61;
+     static constexpr S<8>::S_t p37 = ((S<8>::S_t)1) << (37 - 1);
+     static constexpr S<8>::S_t p41 = ((S<8>::S_t)1) << (41 - 1);
+     static constexpr S<8>::S_t p43 = ((S<8>::S_t)1) << (43 - 1);
+     static constexpr S<8>::S_t p47 = ((S<8>::S_t)1) << (47 - 1);
+     static constexpr S<8>::S_t p53 = ((S<8>::S_t)1) << (53 - 1);
+     static constexpr S<8>::S_t p59 = ((S<8>::S_t)1) << (59 - 1);
+     static constexpr S<8>::S_t p61 = ((S<8>::S_t)1) << (61 - 1);
 
      static constexpr std::size_t Magic1 = (p3 | p5 | p7 | p11 | p13 |
 					    p17 | p19 | p23| p29 |
@@ -197,6 +193,19 @@ std::size_t
 scramble(const Hash h)
 {
      return Double{h, M<N_CHARS>::Magic1}.reduce();
+}
+
+bool
+scrambleUntilEnd(const char* str, std::size_t& hash)
+{
+     for (unsigned i = 1; i < N_CHARS; i++) {
+	  if (!str[i]) {
+	       // found the last '\0'
+	       hash = scramble(Hash{str, i});
+	       return true;
+	  }
+     }
+     return false;
 }
 
 std::size_t
@@ -277,24 +286,36 @@ primeHash(const void* ptr, const std::size_t size) {
 std::size_t
 primeHash(const char* str) {
 
-     Hash u{};
+     Hash u;
      // Handle the first bytes until str is aligned with a size_t word
      unsigned i;
      for (i = 0; ;i++) {
-	  if (!(((std::size_t)(str + i)) & (N_CHARS - 1))) {
-	       // size_t alignment
-	       if (i > 0) {
-		    // Start the initial seed with the first bytes
-		    // scattered in the full word
-		    u = scramble(Hash{str, i});
-	       }
-	       break;
-	  }
-	  if (!str[i]) {
+	  if (str[i] == '\0') {
 	       ///@note all the data fits in size_t
 	       // Scramble the bits anyway to acomodate for hash
 	       // tables growing by powers of 2
 	       return scramble(Hash{str, i});
+	  }
+	  if (!(((std::size_t)(str + i)) & (N_CHARS - 1))) {
+	       // size_t alignment
+	       // Start the initial seed with the first bytes
+	       // scattered in the full word
+	       if (i == 0) {
+		    // str was already size_t aligned, consume some
+		    // bytes for the initial seed.
+		    std::size_t tmp;
+		    if (scrambleUntilEnd(str, tmp)) {
+			 ///@note all the data fits in size_t
+			 // found the last '\0'
+			 return tmp;
+		    } else {
+			 u = Hash{str};
+			 str += N_CHARS;
+		    }
+	       } else {
+		    u = scramble(Hash{str, i});
+	       }
+	       break;
 	  }
      }
 
@@ -307,17 +328,22 @@ primeHash(const char* str) {
 	  if ((curr - M<N_CHARS>::lo) & ~curr & M<N_CHARS>::hi) {
 	       // current word might have a zero byte
 	       str = (const char*)(wordPtr - 1);
-	       for (i = 0; i < N_CHARS; i++) {
-		    if (!str[i]) {
-			 // found the last '\0'
-			 return combine(u, Hash{scramble(Hash{curr, i})});
-		    }
+	       if (str[0] == '\0') {
+		    break; // no more data.
+	       }
+	       std::size_t tmp;
+	       if (scrambleUntilEnd(str, tmp)) {
+		    // found the last '\0'
+		    u = combine(u, Hash{tmp});
+		    break;
 	       }
 	       // else false positive...
 	  }
 	  // ...continue with the next word
 	  u = combine(u, Hash{curr});
      }
+
+     return u.h;
 }
 
 std::size_t
@@ -340,9 +366,9 @@ main(int argc, char *argv[])
 
 	  auto stdTime = duration_cast<std::chrono::nanoseconds>(t2 -t1);
 	  auto primeTime = duration_cast<std::chrono::nanoseconds>(t3 -t2);
-	  printf("stdhash (%ld ns): %zd %zx %zo, myHash (%ld ns): %zd %zx %zo\n",
-		 stdTime.count(), h1, h1, h1,
-		 primeTime.count(), h2, h2, h2);
+	  printf("stdhash (%ld ns):\t %zd\t %zx , myHash (%ld ns):\t %zd \t%zx \n",
+		 stdTime.count(), h1, h1,
+		 primeTime.count(), h2, h2);
      }
      return 0;
 }
