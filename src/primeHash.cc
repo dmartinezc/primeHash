@@ -14,16 +14,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#include "stdio.h"
+#include "../include/primeHash.hh"
 
 #include <cstddef> // for size_t
 #include <cstdint> // for uint64_t
 #include <climits> // CHAR_BIT
 #include <cassert> // for assert
 
-#include <string_view>
-#include <functional> // hash
-#include <chrono>
 
 namespace {
 
@@ -34,9 +31,10 @@ struct Hash {
      explicit Hash(const std::size_t val) : h(val) { }
 
      explicit Hash(const std::size_t w, const unsigned bytes) :
-	  h(w &
-	    ~(((std::size_t)(-1)) << (bytes * CHAR_BIT)))
-     {
+	  h(bytes == N_CHARS ?
+	    w :
+	    w & (~(((std::size_t)(-1)) << (bytes * CHAR_BIT))))
+	  {
 	  assert(bytes <= N_CHARS &&
 		 "packing too many bits");
      }
@@ -234,97 +232,54 @@ combine(const Hash a, const Hash b, const Hash c, const Hash d)
 
 } // anonymous namespace
 
-/* WIP
+
 std::size_t
-primeHash(const void* ptr, const std::size_t size) {
-
-     unsigned i;
-     for (i = 0;
-	  ((std::size_t)(str + i)) & (N_CHARS - 1); // size_t alignment
-	  i++) {
-	  if (!str[i]) {
-	       ///@note scramble the bits anyway
-	       return Double{Hash{str, i},
-			     M<N_CHARS>::Magic1
-			     }.reduce();
-	  }
+primeHash(const void* ptr, std::size_t size)
+{
+     Hash u{size}; // size is the initial seed.
+     if (size <= N_CHARS) {
+	  ///@note all the data fits in size_t
+	  // Scramble the bits anyway to accommodate for hash
+	  // tables growing by powers of 2
+	  return combine(u, Hash{(char*)ptr, (unsigned)size});
      }
 
-     // Now 'wordPtr' points to a size_t aligned word.
-     std::size_t* wordPtr = (std::size_t*)(str + i);
-
-     // Start the initial seed with the first bytes and consume
-     // N_CHARS at a time while doing the combine..
-     Hash u = (i == 0 ? Hash{*wordPtr++} : Hash{str, i});
-
-
-
-     while (true) {
-	  std::size_t curr = *wordPtr++;
-	  if ((curr - M<N_CHARS>::lo) & ~curr & M<N_CHARS>::hi) {
-	       // current word might have a zero byte
-	       str = (const char*)(wordPtr - 1);
-
-	       for (i = 0; i < N_CHARS; i++) {
-		    if (!str[i]) {
-			 // found the last '\0'
-			 break;
-		    }
-	       }
-	       if (!str[i]) {
-		    return combine(u, Hash{curr, i});
-	       }
-	       // else false positive...
-	  }
-	  // ...continue with the next word
-	  u = combine(u, Hash{curr});
+     // Consume N_CHARS at a time while doing the combine.
+     std::size_t* wordData = (std::size_t*)(ptr);
+     while (size > N_CHARS) {
+	  size -= N_CHARS;
+	  u = combine(u, Hash{*wordData++});
      }
+
+     // handle the bits in the tail.
+     if (size > 0) {
+	  u = combine(u, Hash{*wordData, (unsigned)size});
+     }
+     
+     return u.h;
 }
-*/
-
 
 std::size_t
 primeHash(const char* str) {
 
-     Hash u;
-     // Handle the first bytes until str is aligned with a size_t word
-     unsigned i;
-     for (i = 0; ;i++) {
-	  if (str[i] == '\0') {
-	       ///@note all the data fits in size_t
-	       // Scramble the bits anyway to acomodate for hash
-	       // tables growing by powers of 2
-	       return scramble(Hash{str, i});
-	  }
-	  if (!(((std::size_t)(str + i)) & (N_CHARS - 1))) {
-	       // size_t alignment
-	       // Start the initial seed with the first bytes
-	       // scattered in the full word
-	       if (i == 0) {
-		    // str was already size_t aligned, consume some
-		    // bytes for the initial seed.
-		    std::size_t tmp;
-		    if (scrambleUntilEnd(str, tmp)) {
-			 ///@note all the data fits in size_t
-			 // found the last '\0'
-			 return tmp;
-		    } else {
-			 u = Hash{str};
-			 str += N_CHARS;
-		    }
-	       } else {
-		    u = scramble(Hash{str, i});
+     // consume N_CHARS at a time while doing the combine.
+     std::size_t* wordPtr = (std::size_t*)(str);
+     std::size_t curr = *wordPtr++;
+     if ((curr - M<N_CHARS>::lo) & ~curr & M<N_CHARS>::hi) {
+	  // current word might have a zero byte
+	  for (unsigned i = 1; i < N_CHARS; i++) {
+	       if (!str[i]) {
+		    ///@note all the string fits in size_t
+		    // Scramble the bits anyway to accommodate for
+		    // hash tables growing by powers of 2
+		    return scramble(Hash{str, i});
 	       }
-	       break;
 	  }
      }
-
-     // Now 'wordPtr' points to a size_t aligned word.
-     // consume N_CHARS at a time while doing the combine.
-     std::size_t* wordPtr = (std::size_t*)(str + i);
-
+     
+     Hash u{curr};
      while (true) {
-	  std::size_t curr = *wordPtr++;
+	  curr = *wordPtr++;
 	  if ((curr - M<N_CHARS>::lo) & ~curr & M<N_CHARS>::hi) {
 	       // current word might have a zero byte
 	       str = (const char*)(wordPtr - 1);
@@ -332,6 +287,8 @@ primeHash(const char* str) {
 		    break; // no more data.
 	       }
 	       std::size_t tmp;
+	       ///@RFE Maybe this scramble is not beneficial.
+	       /// just combine.
 	       if (scrambleUntilEnd(str, tmp)) {
 		    // found the last '\0'
 		    u = combine(u, Hash{tmp});
@@ -344,31 +301,4 @@ primeHash(const char* str) {
      }
 
      return u.h;
-}
-
-std::size_t
-stdHash(const char* str)
-{
-     return std::hash<std::string_view>{}(str);
-}
-
-int
-main(int argc, char *argv[])
-{
-     if (argv[1]) {
-	  using namespace std::chrono;
-
-	  high_resolution_clock::time_point t1 = high_resolution_clock::now();
-	  std::size_t h1 =  stdHash(argv[1]);
-	  high_resolution_clock::time_point t2 = high_resolution_clock::now();
-	  std::size_t h2 = primeHash(argv[1]);
-	  high_resolution_clock::time_point t3 = high_resolution_clock::now();
-
-	  auto stdTime = duration_cast<std::chrono::nanoseconds>(t2 -t1);
-	  auto primeTime = duration_cast<std::chrono::nanoseconds>(t3 -t2);
-	  printf("stdhash (%ld ns):\t %zd\t %zx , myHash (%ld ns):\t %zd \t%zx \n",
-		 stdTime.count(), h1, h1,
-		 primeTime.count(), h2, h2);
-     }
-     return 0;
 }
