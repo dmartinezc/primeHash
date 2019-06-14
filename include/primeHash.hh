@@ -16,6 +16,10 @@
 
 
 #include <cstddef> // for size_t
+#include <cstdint> // for uint32_t
 
 std::size_t primeHash(const void* ptr, std::size_t size);
 std::size_t primeHash(const char* str);
+
+void primeHash32(const void* key, int len, uint32_t seed, void* out);
+void primeHash64(const void* key, int len, uint32_t seed, void* out);

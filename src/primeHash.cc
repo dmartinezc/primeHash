@@ -24,40 +24,39 @@
 
 namespace {
 
-constexpr std::size_t N_CHARS = sizeof(std::size_t);
-
+template <typename T>
 struct Hash {
      Hash() : h() { }
-     explicit Hash(const std::size_t val) : h(val) { }
+     explicit Hash(const T val) : h(val) { }
 
-     explicit Hash(const std::size_t w, const unsigned bytes) :
-	  h(bytes == N_CHARS ?
+     explicit Hash(const T w, const unsigned bytes) :
+	  h(bytes == sizeof(T) ?
 	    w :
-	    w & (~(((std::size_t)(-1)) << (bytes * CHAR_BIT))))
+	    w & (~(((T)(-1)) << (bytes * CHAR_BIT))))
 	  {
-	  assert(bytes <= N_CHARS &&
+	  assert(bytes <= sizeof(T) &&
 		 "packing too many bits");
      }
      explicit Hash(const char* str) :
-	  h(*reinterpret_cast<const std::size_t*>(str))
+	  h(*reinterpret_cast<const T*>(str))
      {
 #ifndef NDEBUG
-	  for (int i = 0; i < N_CHARS; i++) {
+	  for (int i = 0; i < sizeof(T); i++) {
 	       assert(str[i] && "not enough data");
 	  }
 #endif
      }
      explicit Hash(const char* str, const unsigned bytes) :
-	  Hash(*reinterpret_cast<const std::size_t*>(str), bytes)
+	  Hash(*reinterpret_cast<const T*>(str), bytes)
      {
-	  assert(bytes <= N_CHARS &&
+	  assert(bytes <= sizeof(T) &&
 		 "packing too many bits");
      }
-     void operator=(std::size_t val) {
+     void operator=(T val) {
 	  h = val;
      }
 
-     std::size_t h;
+     T h;
 }; // struct Hash
 
 /// single precision data type
@@ -68,48 +67,52 @@ template<> struct S<8> { typedef std::uint64_t S_t; };
 /// double precision data type
 template <std::size_t bytes> struct D;
 template<> struct D<4> { typedef std::uint64_t D_t; };
-template<> struct D<8> { typedef unsigned __int128 D_t; };
+template<> struct D<8> {
+     // non std :(, supported by gcc and clang
+     typedef unsigned __int128 D_t;
+};
 
+template <unsigned N_CHARS>
 struct Double {
-     using D_t =  D<N_CHARS>::D_t;
+     using S_t =  typename S<N_CHARS>::S_t;
+     using D_t =  typename D<N_CHARS>::D_t;
 
-     explicit Double(const std::size_t val, const std::size_t magic) :
+     explicit Double(const S_t val, const S_t magic) :
 	  u(((D_t)val) * ((D_t)magic))
 	  { }
-     explicit Double(const Hash val, const std::size_t magic) :
+     explicit Double(const Hash<S_t> val, const S_t magic) :
 	  Double(val.h, magic)
 	  { }
-     explicit Double(const Double&& a) :
+     explicit Double(const Double<N_CHARS>&& a) :
 	  u(a.u.h)
 	  { }
-     explicit Double(const Double&& a, const Double&& b) :
+     explicit Double(const Double<N_CHARS>&& a,
+		     const Double<N_CHARS>&& b) :
 	  u(a.u.h ^ b.u.h)
 	  { }
      explicit Double(const Double&& a, const Double&& b,
 		     const Double&& c) :
 	  u(a.u.h ^ b.u.h ^ c.u.h)
 	  { }
-     explicit Double(const Double&& a, const Double&& b,
-		     const Double&& c, const Double&& d) :
-	  u(a.u.h ^ b.u.h ^ c.u.h ^ d.u.h)
-	  { }
 
-     std::size_t reduce() const {
+     S_t reduce() const {
 	  return u.ab[0] ^ u.ab[1];
      }
     
      union U {
 	  U(D_t val) : h(val) { }
 	  D_t h;
-	  std::size_t ab[2]; // [msb, lsb]
-	  static_assert(sizeof(D_t) == (2*sizeof(std::size_t)),
+	  S_t ab[2]; // [msb, lsb]
+	  static_assert(sizeof(D_t) == (2*sizeof(S_t)),
 	       "data size miss alignment");
      } u;
 };
 
 /// Prime numbers
 struct P {
-     // 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61
+     //1 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61
+     static constexpr std::size_t p1 = 1u << (1 - 1);
+     static constexpr std::size_t p2 = 1u << (2 - 1);
      static constexpr std::size_t p3 = 1u << (3 - 1);
      static constexpr std::size_t p5 = 1u << (5 - 1);
      static constexpr std::size_t p7 = 1u << (7 - 1);
@@ -125,33 +128,23 @@ struct P {
 /// magic numbers
 template <std::size_t bytes> struct M;
 template<> struct M<4> : P {
-     static constexpr std::size_t hi = 0x80808080;
-     static constexpr std::size_t lo = 0x01010101;
+     static constexpr S<4>::S_t hi = 0x80808080;
+     static constexpr S<4>::S_t lo = 0x01010101;
 
-     static constexpr std::size_t Magic1 =
-	  p3 | p5 | p7 | p11 | p13 | p17 | p19 | p23| p29 | p31;
+     static constexpr S<4>::S_t Magic1 =
+         p3 | p5 | p7 | p11 | p13 | p17 | p19 | p23| p29 | p31;
 
-     static constexpr std::size_t Magic2a = p3 | p7 | p13 | p19 | p29;
-     static constexpr std::size_t Magic2b = p5 | p11 | p17 | p23 | p31;
+     static constexpr S<4>::S_t Magic2a = p3 | p7 | p13 | p19 | p29;
+     static constexpr S<4>::S_t Magic2b = p5 | p11 | p17 | p23 | p31;
 
-     static constexpr std::size_t Magic3a = p3 | p11 | p19; // | p31?
-     static constexpr std::size_t Magic3b = p5 | p13 | p23;
-     static constexpr std::size_t Magic3c = p7 | p17 | p29;
+     static constexpr S<4>::S_t Magic3a = p7 | p17 | p29;
+     static constexpr S<4>::S_t Magic3b = p5 | p13 | p23;
+     static constexpr S<4>::S_t Magic3c = p3 | p11 | p19 | p31;
 
-     static constexpr std::size_t Magic4a = p3 | p13; // | p29 ?
-     static constexpr std::size_t Magic4b = p5 | p17; // | p31 ?
-     static constexpr std::size_t Magic4c = p7 | p19;
-     static constexpr std::size_t Magic4d = p11 | p23;
-
-     static constexpr std::size_t Magic5a = p3 | p17;
-     static constexpr std::size_t Magic5b = p5 | p19;
-     static constexpr std::size_t Magic5c = p7 | p23;
-     static constexpr std::size_t Magic5d = p11 | p29;
-     static constexpr std::size_t Magic5e = p13 | p31;
 };
 template<> struct M<8> : P {
-     static constexpr std::size_t hi = 0x8080808080808080;
-     static constexpr std::size_t lo = 0x0101010101010101;
+     static constexpr S<8>::S_t hi = 0x8080808080808080;
+     static constexpr S<8>::S_t lo = 0x0101010101010101;
 
      static constexpr S<8>::S_t p37 = ((S<8>::S_t)1) << (37 - 1);
      static constexpr S<8>::S_t p41 = ((S<8>::S_t)1) << (41 - 1);
@@ -161,73 +154,94 @@ template<> struct M<8> : P {
      static constexpr S<8>::S_t p59 = ((S<8>::S_t)1) << (59 - 1);
      static constexpr S<8>::S_t p61 = ((S<8>::S_t)1) << (61 - 1);
 
-     static constexpr std::size_t Magic1 = (p3 | p5 | p7 | p11 | p13 |
-					    p17 | p19 | p23| p29 |
-					    p31 | p37 | p41 | p43 |
-					    p47 | p53 | p59 | p61);
+     static constexpr S<8>::S_t Magic1 = (p3 | p5 | p7 | p11 | p13 |
+					  p17 | p19 | p23| p29 |
+					  p31 | p37 | p41 | p43 |
+					  p47 | p53 | p59 | p61);
 
      static constexpr S<8>::S_t Magic2a =
-            (p3 | p7 | p13 | p19 | p29 | p37 | p43 | p53); // p61?
+          (p5 | p11 | p17 | p23 | p31 | p41 | p47 | p59);
      static constexpr S<8>::S_t Magic2b =
-            (p5 | p11 | p17 | p23 | p31 | p41 | p47 | p59);
+          (p3 | p7 | p13 | p19 | p29 | p37 | p43 | p53 | p61);
 
-     static constexpr S<8>::S_t Magic3a = p3 | p11 | p19 | p31 | p43; // | p59 ?
-     static constexpr S<8>::S_t Magic3b = p5 | p13 | p23 | p37 | p47; // | p61 ?
-     static constexpr S<8>::S_t Magic3c = p7 | p17 | p29 | p41 | p53;
-
-     static constexpr S<8>::S_t Magic4a = p3 | p13 | p29 | p43; // | p61 ?
-     static constexpr S<8>::S_t Magic4b = p5 | p17 | p31 | p47;
-     static constexpr S<8>::S_t Magic4c = p7 | p19 | p37 | p53;
-     static constexpr S<8>::S_t Magic4d = p11 | p23 | p41 | p59;
-
-     static constexpr std::size_t Magic5a = p3 | p17 | p37; // | p59 ?
-     static constexpr std::size_t Magic5b = p5 | p19 | p41; // | p61 ?
-     static constexpr std::size_t Magic5c = p7 | p23 | p43;
-     static constexpr std::size_t Magic5d = p11 | p29 | p47;
-     static constexpr std::size_t Magic5e = p13 | p31 | p53;
+     static constexpr S<8>::S_t Magic3a = p7 | p17 | p29 | p41 | p53;
+     static constexpr S<8>::S_t Magic3b = p5 | p13 | p23 | p37 | p47 | p61;
+     static constexpr S<8>::S_t Magic3c = p3 | p11 | p19 | p31 | p43 | p59;
 };
 
 std::size_t
-scramble(const Hash h)
+scramble(const Hash<std::size_t> h)
 {
-     return Double{h, M<N_CHARS>::Magic1}.reduce();
+     constexpr unsigned N_CHARS = sizeof(std::size_t);
+     return Double<N_CHARS>{h, M<N_CHARS>::Magic1}.reduce();
 }
 
-bool
-scrambleUntilEnd(const char* str, std::size_t& hash)
+template<typename T>
+T
+combine(const Hash<T> a, const Hash<T> b)
 {
-     for (unsigned i = 1; i < N_CHARS; i++) {
-	  if (!str[i]) {
-	       // found the last '\0'
-	       hash = scramble(Hash{str, i});
-	       return true;
-	  }
+     constexpr unsigned N_CHARS = sizeof(T);
+     return Double<N_CHARS>{Double<N_CHARS>{a, M<N_CHARS>::Magic2a},
+			    Double<N_CHARS>{b, M<N_CHARS>::Magic2b}
+			    }.reduce();
+}
+
+template<typename T>
+T
+combine(const Hash<T> a, const Hash<T> b, const Hash<T> c)
+{
+     constexpr unsigned N_CHARS = sizeof(T);
+     return Double<N_CHARS>{Double<N_CHARS>{a, M<N_CHARS>::Magic3a},
+			    Double<N_CHARS>{b, M<N_CHARS>::Magic3b},
+			    Double<N_CHARS>{c, M<N_CHARS>::Magic3c}
+			    }.reduce();
+}
+
+/// generic version implementing the interface of SMHasher
+/// basically std::size_t primeHash(const void* ptr, std::size_t size)
+/// with a seed (that is also considered for the initial hash value)
+template<typename T>
+void
+primeHash(const void* key, int len, uint32_t seed, void* out)
+{
+     constexpr unsigned N_CHARS = sizeof(T);
+     if (len <= 0) {
+	  // bad arguments, nothing to do.
+	  *(T*)out = seed;
+	  return;
      }
-     return false;
-}
+     assert((key != nullptr) && "bad key ptr.");
 
-std::size_t
-combine(const Hash a, const Hash b)
-{
-     return Double{Double{a, M<N_CHARS>::Magic2a},
-		   Double{b, M<N_CHARS>::Magic2b}}.reduce();
-}
+     unsigned size = len;
+     
+     if (size <= N_CHARS) {
+	  ///@note all the data fits in T
+	  *(T*)out = combine(Hash<T>{(T)seed},
+			     Hash<T>{((T)size)},
+			     Hash<T>{(char*)key, size});
+	  return;
+     }
+     
+     T* wordData = (T*)(key);
+     Hash<T> u{combine(Hash<T>{(T)seed},
+		       Hash<T>{((T)size)},
+		       Hash<T>{*wordData++})};
+     size -= N_CHARS;
+     // Consume N_CHARS at a time while doing the combine.
+     ///@note for 32 bits hash we could still consume every 64 bits if
+     /// supported, but lets make it fair.
+     while (size > N_CHARS) {
+	  size -= N_CHARS;
+	  u = combine(u, Hash<T>{*wordData++});
+     }
 
-std::size_t
-combine(const Hash a, const Hash b, const Hash c)
-{
-     return Double{Double{a, M<N_CHARS>::Magic3a},
-		   Double{b, M<N_CHARS>::Magic3b},
-		   Double{c, M<N_CHARS>::Magic3c}}.reduce();
-}
+     // handle the bits in the tail.
+     if (size > 0) {
+	  u = combine(u, Hash<T>{*wordData, size});
+     }
+     
 
-std::size_t
-combine(const Hash a, const Hash b, const Hash c, const Hash d)
-{
-     return Double{Double{a, M<N_CHARS>::Magic4a},
-		   Double{b, M<N_CHARS>::Magic4b},
-		   Double{c, M<N_CHARS>::Magic4c},
-		   Double{d, M<N_CHARS>::Magic4d}}.reduce();
+     *(T*)out = u.h;
 }
 
 } // anonymous namespace
@@ -236,31 +250,35 @@ combine(const Hash a, const Hash b, const Hash c, const Hash d)
 std::size_t
 primeHash(const void* ptr, std::size_t size)
 {
-     Hash u{size}; // size is the initial seed.
+     constexpr unsigned N_CHARS = sizeof(std::size_t);
+     Hash<std::size_t> u{size}; // size is the initial seed.
      if (size <= N_CHARS) {
 	  ///@note all the data fits in size_t
 	  // Scramble the bits anyway to accommodate for hash
 	  // tables growing by powers of 2
-	  return combine(u, Hash{(char*)ptr, (unsigned)size});
+	  return combine(u, Hash<std::size_t>{(char*)ptr,
+					      (unsigned)size});
      }
 
      // Consume N_CHARS at a time while doing the combine.
      std::size_t* wordData = (std::size_t*)(ptr);
      while (size > N_CHARS) {
 	  size -= N_CHARS;
-	  u = combine(u, Hash{*wordData++});
+	  u = combine(u, Hash<std::size_t>{*wordData++});
      }
 
      // handle the bits in the tail.
      if (size > 0) {
-	  u = combine(u, Hash{*wordData, (unsigned)size});
+	  u = combine(u, Hash<std::size_t>{*wordData, (unsigned)size});
      }
      
      return u.h;
 }
 
 std::size_t
-primeHash(const char* str) {
+primeHash(const char* str)
+{
+     constexpr unsigned N_CHARS = sizeof(std::size_t);
 
      // consume N_CHARS at a time while doing the combine.
      std::size_t* wordPtr = (std::size_t*)(str);
@@ -272,12 +290,12 @@ primeHash(const char* str) {
 		    ///@note all the string fits in size_t
 		    // Scramble the bits anyway to accommodate for
 		    // hash tables growing by powers of 2
-		    return scramble(Hash{str, i});
+		    return scramble(Hash<std::size_t>{str, i});
 	       }
 	  }
      }
      
-     Hash u{curr};
+     Hash<std::size_t> u{curr};
      while (true) {
 	  curr = *wordPtr++;
 	  if ((curr - M<N_CHARS>::lo) & ~curr & M<N_CHARS>::hi) {
@@ -286,19 +304,33 @@ primeHash(const char* str) {
 	       if (str[0] == '\0') {
 		    break; // no more data.
 	       }
-	       std::size_t tmp;
-	       ///@RFE Maybe this scramble is not beneficial.
-	       /// just combine.
-	       if (scrambleUntilEnd(str, tmp)) {
-		    // found the last '\0'
-		    u = combine(u, Hash{tmp});
-		    break;
+	       for (unsigned i = 1; i < N_CHARS; i++) {
+		    if (!str[i]) {
+			 // found the last '\0'
+			 u = combine(u, Hash<std::size_t>{str, i});
+			 break;
+		    }
 	       }
 	       // else false positive...
 	  }
 	  // ...continue with the next word
-	  u = combine(u, Hash{curr});
+	  u = combine(u, Hash<std::size_t>{curr});
      }
 
      return u.h;
+}
+
+
+/// 64 bits hash value implementing the interface of SMHasher
+void
+primeHash64(const void* key, int len, uint32_t seed, void* out)
+{
+     primeHash<uint64_t>(key, len, seed, out);
+}
+
+/// 32 bits hash value implementing the interface of SMHasher
+void
+primeHash32(const void* key, int len, uint32_t seed, void* out)
+{
+     primeHash<uint32_t>(key, len, seed, out);
 }

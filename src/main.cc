@@ -50,11 +50,13 @@ main(int argc, char *argv[])
 	  auto primeTimeStr = duration_cast<std::chrono::nanoseconds>(t3 - t2);
 	  auto primeTimeBytes = duration_cast<std::chrono::nanoseconds>(t4 - t3);
 	  auto strLength = duration_cast<std::chrono::nanoseconds>(tl - t3);
-	  printf("stdhash (%ld ns):\t  %zx , myHashStr (%ld ns):\t %zx , myHashBytes (%ld ns (%ld) (%ld) ):\t%zx \n",
-		 stdTime.count(), h1,
-		 primeTimeStr.count(), h2,
-		 primeTimeBytes.count(), strLength.count(), (primeTimeBytes.count() - strLength.count()),
-		 h3);
+	  printf("stdhash \t %zx \t (%ld ns) \n",
+		 h1, stdTime.count());
+	  printf("myHashStr \t %zx \t (%ld ns)\n",
+		 h2, primeTimeStr.count());
+	  printf("myHashBytes \t %zx \t (%ld ns (strlen %ld hash: %ld) ) \n",
+		 h3, primeTimeBytes.count(), strLength.count(),
+		 (primeTimeBytes.count() - strLength.count()));
      }
      return 0;
 }
