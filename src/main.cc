@@ -45,6 +45,18 @@ main(int argc, char *argv[])
 	  high_resolution_clock::time_point tl = high_resolution_clock::now();
 	  std::size_t h3 = primeHash(argv[1], l);
 	  high_resolution_clock::time_point t4 = high_resolution_clock::now();
+	  std::size_t h4 = 0;
+	  primeHash32(argv[1], l, 1, &h4);
+	  high_resolution_clock::time_point t5 = high_resolution_clock::now();
+	  std::size_t h5 = 0;
+	  primeHash32(argv[1], l, 2, &h5);
+	  high_resolution_clock::time_point t6 = high_resolution_clock::now();
+	  for (int i = 0; i<10; i++) {
+	       std::size_t v = 0;
+	       std::size_t H = 0;
+	       primeHash32(&v, i, 0, &H);
+	       printf ("%d: %#10x\n", i, H);
+	  }
 
 	  auto stdTime = duration_cast<std::chrono::nanoseconds>(t2 - t1);
 	  auto primeTimeStr = duration_cast<std::chrono::nanoseconds>(t3 - t2);
@@ -58,5 +70,30 @@ main(int argc, char *argv[])
 		 h3, primeTimeBytes.count(), strLength.count(),
 		 (primeTimeBytes.count() - strLength.count()));
      }
+
+
+     int keycount = 64*1024;
+
+  printf("Keyset 'Zeroes' - %d keys\n",keycount);
+
+  unsigned char * nullblock = new unsigned char[keycount];
+  memset(nullblock,0,keycount);
+
+  //----------
+
+  std::vector<unsigned> hashes;
+
+  hashes.resize(keycount);
+
+  for(int i = 0; i < keycount; i++)
+  {
+       primeHash32(nullblock,i,0,&hashes[i]);
+       printf("%#10x\n", hashes[i]);
+  }
+
+
+  printf("\n");
+
+  delete [] nullblock;
      return 0;
 }

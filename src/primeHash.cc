@@ -16,6 +16,7 @@
 
 #include "../include/primeHash.hh"
 
+#include <utility> // for std::move
 #include <cstddef> // for size_t
 #include <cstdint> // for uint64_t
 #include <climits> // CHAR_BIT
@@ -27,7 +28,7 @@ namespace {
 template <typename T>
 struct Hash {
      Hash() : h() { }
-     explicit Hash(const T val) : h(val) { }
+     Hash(const T val) : h(val) { }
 
      explicit Hash(const T w, const unsigned bytes) :
 	  h(bytes == sizeof(T) ?
@@ -76,12 +77,20 @@ template <unsigned N_CHARS>
 struct Double {
      using S_t =  typename S<N_CHARS>::S_t;
      using D_t =  typename D<N_CHARS>::D_t;
-
+     Double(const Double<N_CHARS>& other) :
+	  u(other.u.h)
+	  { }
+     Double(const D_t val) :
+	  u(val)
+	  { }
      explicit Double(const S_t val, const S_t magic) :
 	  u(((D_t)val) * ((D_t)magic))
 	  { }
      explicit Double(const Hash<S_t> val, const S_t magic) :
 	  Double(val.h, magic)
+	  { }
+     explicit Double(const Hash<S_t> val1, const Hash<S_t> val2) :
+	  u(val1.h, val2.h)
 	  { }
      explicit Double(const Double<N_CHARS>&& a) :
 	  u(a.u.h)
@@ -98,9 +107,10 @@ struct Double {
      S_t reduce() const {
 	  return u.ab[0] ^ u.ab[1];
      }
-    
+
      union U {
 	  U(D_t val) : h(val) { }
+	  U(S_t val1, S_t val2) : ab({val1, val2}) { }
 	  D_t h;
 	  S_t ab[2]; // [msb, lsb]
 	  static_assert(sizeof(D_t) == (2*sizeof(S_t)),
@@ -108,9 +118,11 @@ struct Double {
      } u;
 };
 
-/// Prime numbers
-struct P {
-     //1 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61
+/// 1 bit at the position of eah prime numbers
+// 1 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61
+template <std::size_t bytes> struct P;
+template <> struct P<4> {
+     // 32 bits 1 to 61
      static constexpr std::size_t p1 = 1u << (1 - 1);
      static constexpr std::size_t p2 = 1u << (2 - 1);
      static constexpr std::size_t p3 = 1u << (3 - 1);
@@ -125,14 +137,26 @@ struct P {
      static constexpr std::size_t p31 = 1u << (31 - 1);
 };
 
+template <>struct P<8> : P<4> {
+     // 64 bits previous + 37 to 61
+     static constexpr S<8>::S_t p37 = ((S<8>::S_t)1) << (37 - 1);
+     static constexpr S<8>::S_t p41 = ((S<8>::S_t)1) << (41 - 1);
+     static constexpr S<8>::S_t p43 = ((S<8>::S_t)1) << (43 - 1);
+     static constexpr S<8>::S_t p47 = ((S<8>::S_t)1) << (47 - 1);
+     static constexpr S<8>::S_t p53 = ((S<8>::S_t)1) << (53 - 1);
+     static constexpr S<8>::S_t p59 = ((S<8>::S_t)1) << (59 - 1);
+     static constexpr S<8>::S_t p61 = ((S<8>::S_t)1) << (61 - 1);
+
+};
+
 /// magic numbers
 template <std::size_t bytes> struct M;
-template<> struct M<4> : P {
+template<> struct M<4> : P<4> {
      static constexpr S<4>::S_t hi = 0x80808080;
      static constexpr S<4>::S_t lo = 0x01010101;
 
-     static constexpr S<4>::S_t Magic1 =
-         p3 | p5 | p7 | p11 | p13 | p17 | p19 | p23| p29 | p31;
+     static constexpr S<4>::S_t Magic1 = p1 |
+         p3 | p5 | p7 | p11 | p13 | p17 | p19 | p23| p29;
 
      static constexpr S<4>::S_t Magic2a = p3 | p7 | p13 | p19 | p29;
      static constexpr S<4>::S_t Magic2b = p5 | p11 | p17 | p23 | p31;
@@ -142,19 +166,11 @@ template<> struct M<4> : P {
      static constexpr S<4>::S_t Magic3c = p3 | p11 | p19 | p31;
 
 };
-template<> struct M<8> : P {
+template<> struct M<8> : P<8> {
      static constexpr S<8>::S_t hi = 0x8080808080808080;
      static constexpr S<8>::S_t lo = 0x0101010101010101;
 
-     static constexpr S<8>::S_t p37 = ((S<8>::S_t)1) << (37 - 1);
-     static constexpr S<8>::S_t p41 = ((S<8>::S_t)1) << (41 - 1);
-     static constexpr S<8>::S_t p43 = ((S<8>::S_t)1) << (43 - 1);
-     static constexpr S<8>::S_t p47 = ((S<8>::S_t)1) << (47 - 1);
-     static constexpr S<8>::S_t p53 = ((S<8>::S_t)1) << (53 - 1);
-     static constexpr S<8>::S_t p59 = ((S<8>::S_t)1) << (59 - 1);
-     static constexpr S<8>::S_t p61 = ((S<8>::S_t)1) << (61 - 1);
-
-     static constexpr S<8>::S_t Magic1 = (p3 | p5 | p7 | p11 | p13 |
+     static constexpr S<8>::S_t Magic1 = (p1 | p3 | p5 | p7 | p11 | p13 |
 					  p17 | p19 | p23| p29 |
 					  p31 | p37 | p41 | p43 |
 					  p47 | p53 | p59 | p61);
@@ -169,6 +185,44 @@ template<> struct M<8> : P {
      static constexpr S<8>::S_t Magic3c = p3 | p11 | p19 | p31 | p43 | p59;
 };
 
+
+template <std::size_t bytes> struct Seed;
+/// 1 / (golden ratio) in 32 bits.
+template<> struct Seed<4> {
+     // single precision. 32 bits.
+     static constexpr S<4>::S_t Single = 0x7a371e3f;
+     // double precision. 64 bits.
+     static constexpr D<4>::D_t Double = 0x4fe92f37efc6e33f;
+};
+/// 1 / (golden ratio) in 64 bits.
+template<> struct Seed<8> {
+     // single precision. 64 bits.
+     static constexpr S<8>::S_t Single =  0x4fe92f37efc6e33f;
+
+     // double precision. 128 bits. bummer, the compiler wont allow a 128 bits constexpr.
+     static constexpr S<8>::S_t Doublea = 0xdbb9c08039e72bf8;
+     static constexpr S<8>::S_t Doubleb = 0x94fe72f36e3cfe3f;
+};
+
+S<4>::S_t getSeed(S<4>::S_t /*ignore*/) {
+     return S<4>::S_t{0x7a371e3f};
+}
+S<8>::S_t getSeed(S<8>::S_t /*ignore*/) {
+     return S<8>::S_t{0x4fe92f37efc6e33f};
+}
+
+///@note bummer, c++ don't accept constexprs that cannot be
+/// represented with native datatype. use a function call returning an
+/// expression and let the compiler optimize it
+Double<4> getSeed(Double<4> /*ignore*/) {
+     return Double<4>{0x4fe92f37efc6e33f};
+}
+Double<8> getSeed(Double<8> /*ignore*/) {
+     // return 0xdbb9c08039e72bf894fe72f36e3cfe3f;
+     return Double<8>{(D<8>::D_t)0xdbb9c08039e72bf8 << 64u | 0x94fe72f36e3cfe3f};
+}
+
+
 std::size_t
 scramble(const Hash<std::size_t> h)
 {
@@ -181,20 +235,19 @@ T
 combine(const Hash<T> a, const Hash<T> b)
 {
      constexpr unsigned N_CHARS = sizeof(T);
+//     T h = Double<N_CHARS>{b, M<N_CHARS>::Magic1}.reduce();
+//     return a.h ^ h;
+     /*
+
      return Double<N_CHARS>{Double<N_CHARS>{a, M<N_CHARS>::Magic2a},
 			    Double<N_CHARS>{b, M<N_CHARS>::Magic2b}
 			    }.reduce();
-}
-
-template<typename T>
-T
-combine(const Hash<T> a, const Hash<T> b, const Hash<T> c)
-{
-     constexpr unsigned N_CHARS = sizeof(T);
-     return Double<N_CHARS>{Double<N_CHARS>{a, M<N_CHARS>::Magic3a},
-			    Double<N_CHARS>{b, M<N_CHARS>::Magic3b},
-			    Double<N_CHARS>{c, M<N_CHARS>::Magic3c}
+     */
+     return Double<N_CHARS>{Double<N_CHARS>{a, M<N_CHARS>::Magic1},
+			    Double<N_CHARS>{b, M<N_CHARS>::Magic1}
 			    }.reduce();
+
+//     Double<N_CHARS>{b, M<N_CHARS>::Magic1}.reduce();
 }
 
 /// generic version implementing the interface of SMHasher
@@ -212,21 +265,13 @@ primeHash(const void* key, int len, uint32_t seed, void* out)
      }
      assert((key != nullptr) && "bad key ptr.");
 
+     // internal state, start with a seed.
+     Hash<T> u{getSeed(typename S<N_CHARS>::S_t(0))};
      unsigned size = len;
-     
-     if (size <= N_CHARS) {
-	  ///@note all the data fits in T
-	  *(T*)out = combine(Hash<T>{(T)seed},
-			     Hash<T>{((T)size)},
-			     Hash<T>{(char*)key, size});
-	  return;
-     }
-     
+     u = combine(u, Hash<T>{size});
+     u = combine(u, Hash<T>{seed});
+
      T* wordData = (T*)(key);
-     Hash<T> u{combine(Hash<T>{(T)seed},
-		       Hash<T>{((T)size)},
-		       Hash<T>{*wordData++})};
-     size -= N_CHARS;
      // Consume N_CHARS at a time while doing the combine.
      ///@note for 32 bits hash we could still consume every 64 bits if
      /// supported, but lets make it fair.
@@ -334,3 +379,4 @@ primeHash32(const void* key, int len, uint32_t seed, void* out)
 {
      primeHash<uint32_t>(key, len, seed, out);
 }
+
